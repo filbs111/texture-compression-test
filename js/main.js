@@ -31,7 +31,7 @@ function init(){
     initGL();
     console.log({gl});
     initShaders();
-    //initTexture();
+    initTexture();
     initBuffers();
     getLocationsForShaders();
 
@@ -95,12 +95,19 @@ function bufferArrayDataGeneral(buffer, arr, size){
 
 
 function drawStuff(){
+    requestAnimationFrame(drawStuff);
+/*
     var activeShaderProgram = shaderPrograms.flatcolor;
     gl.useProgram(activeShaderProgram);
     gl.uniform4f(activeShaderProgram.uniforms.uColor, 1,0,0,1); //red
     drawObjectFromBuffers(fsBuffers, activeShaderProgram);
+*/
+    var activeShaderProgram = shaderPrograms.tex;
+    gl.useProgram(activeShaderProgram);
+    bind2dTextureIfRequired(lenaGrayTex);
+	gl.uniform1i(activeShaderProgram.uniforms.uSampler, 0);
+    drawObjectFromBuffers(fsBuffers, activeShaderProgram);
 }
-
 
 
 function drawObjectFromBuffers(bufferObj, shaderProg, usesCubeMap, drawMethod){
@@ -148,4 +155,59 @@ var enableDisableAttributes = (function generateEnableDisableAttributesFunc(){
 		}
 		numEnabled = numToBeEnabled;
 	};
+})();
+
+var lenaGrayTex;
+function initTexture(){
+	lenaGrayTex = makeTexture("png-src/lena512gray.png");
+}
+
+function makePlaceholderTexture(){
+	//dummy 1 pixel image to avoid error logs. https://stackoverflow.com/questions/21954036/dartweb-gl-render-warning-texture-bound-to-texture-unit-0-is-not-renderable
+	var texture = gl.createTexture();
+	bind2dTextureIfRequired(texture);
+	gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+		new Uint8Array([255, 0, 255, 255])); // magenta. should be obvious when tex not loaded.
+	return texture;
+}
+
+function makeTexture(src, yFlip = true) {	//to do OO
+	var texture = makePlaceholderTexture();
+		
+	//dummy 1 pixel image to avoid error logs. https://stackoverflow.com/questions/21954036/dartweb-gl-render-warning-texture-bound-to-texture-unit-0-is-not-renderable
+		//(TODO better to wait for load, or use single shared 1pix texture (bind2dTextureIfRequired to check that texture loaded, by flag on texture? if not loaded, bind the shared summy image?
+		//TODO progressive detail load?
+	gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
+              new Uint8Array([255, 0, 255, 255])); // magenta. should be obvious when tex not loaded.
+	
+	texture.image = new Image();
+	texture.image.onload = function(){
+		bind2dTextureIfRequired(texture);
+		gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, yFlip);
+
+		gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);	//linear colorspace grad light texture (TODO handle other texture differently?)
+		
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+		//gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+		gl.generateMipmap(gl.TEXTURE_2D);
+		bind2dTextureIfRequired(null);	//AFAIK this is just good practice to unwanted side effect bugs
+	};	
+	texture.image.src = src;
+	return texture;
+}
+
+var bind2dTextureIfRequired = (function createBind2dTextureIfRequiredFunction(){
+	var currentlyBoundTextures=[];
+	var currentBoundTex;
+	return function(texToBind, texId = gl.TEXTURE0){	
+		currentBoundTex = currentlyBoundTextures[texId];
+        gl.activeTexture(texId);  
+        if (texToBind != currentBoundTex){
+			//gl.activeTexture(texId);
+			gl.bindTexture(gl.TEXTURE_2D, texToBind);
+			currentlyBoundTextures[texId] = texToBind;
+		}
+	}
 })();
