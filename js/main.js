@@ -104,7 +104,7 @@ function drawStuff(){
 */
     var activeShaderProgram = shaderPrograms.tex;
     gl.useProgram(activeShaderProgram);
-    //bind2dTextureIfRequired(lenaGrayTex);
+    //bind2dTextureIfRequired(uncompressedTex);
     bind2dTextureIfRequired(compressedTex);
 	gl.uniform1i(activeShaderProgram.uniforms.uSampler, 0);
     drawObjectFromBuffers(fsBuffers, activeShaderProgram);
@@ -158,10 +158,12 @@ var enableDisableAttributes = (function generateEnableDisableAttributesFunc(){
 	};
 })();
 
-var lenaGrayTex;
+var uncompressedTex;
 var compressedTex;
 function initTexture(){
-    lenaGrayTex = makeTexture("png-src/lena512gray.png");
+    uncompressedTex = makeTexture("png-src/lena512gray.png");
+    //uncompressedTex = makeTexture("png-src/gradient_linear_512x512.png");
+    //uncompressedTex = makeTexture("png-src/47.png");
     compressedTex = makePlaceholderTexture();
 }
 
@@ -233,7 +235,8 @@ function setupCompressedTextureFromImagedata(u8data){
     for (var aa=0,pp=0;aa<blocksAcross;aa++,pp+=4){
         for (var bb=0,qq=0;bb<blocksAcross;bb++,qq+=4){
                 //TODO use dataview? otherwise endianness might mess this up on other machines.
-                // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DataView 
+                // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DataView
+            /*
             var origPix = 4*(pp*imgSize + qq);   //todo get this from additions in loop
             var pixColorR = u8data[origPix];
             var pixColorG = u8data[origPix+1];
@@ -241,9 +244,60 @@ function setupCompressedTextureFromImagedata(u8data){
 
             var newColor = ( (pixColorR >> 3 ) << 11 ) + ( (pixColorG >> 2 ) << 5 ) + (pixColorB >> 3 );
                 //TODO is &&ing and shifting is faster than two shifts?
+            */
+
+            //grayscale max/min finding.
+           var maxRed = 0;
+           var minRed = 255;
+           
+           var origPix;
+           var pixColorR;
+
+           for (var cc=0;cc<4;cc++){
+                for (var dd=0;dd<4;dd++){
+                    origPix = 4*((pp+cc)*imgSize + qq + dd);
+                    pixColorR = u8data[origPix];     //TODO put to a local array so don't need to look up again in picker part
+                    maxRed = Math.max(maxRed, pixColorR);
+                    minRed = Math.min(minRed, pixColorR);
+                }
+           }
+
+           //test
+           //minRed =0;
+           //maxRed=255;
+
+           var diffRed = 1+maxRed-minRed; //+1 to avoid /0, theseBits=4.
+
+           //go thru again, find where on scale each pixel is.
+           var pickerPart = 0;
+           for (var cc=0;cc<4;cc++){
+                for (var dd=0;dd<4;dd++){
+                    origPix = 4*((pp+cc)*imgSize + qq + (3-dd));
+                    
+                    pixColorR = u8data[origPix];
+                    var theseBits = ((4*(pixColorR - minRed))/diffRed) & 3;
+                        //seems like significant bits are switched.  wierd order of c0,c1,c2,c3
+                    //theseBits = [1,3,2,0][theseBits];   //likely inefficient formulation!
+                    var bitA = (theseBits >> 1);
+                    theseBits = ( 1-bitA )+ ( (( bitA + theseBits) & 1) <<1 );  //faster?
+
+                    pickerPart = (pickerPart << 2);
+                    pickerPart+=theseBits;
+                }
+            }
+
+           var hiColor = ( (maxRed >> 3 ) << 11 ) + ( (maxRed >> 2 ) << 5 ) + (maxRed >> 3 );
+           var loColor = ( (minRed >> 3 ) << 11 ) + ( (minRed >> 2 ) << 5 ) + (minRed >> 3 );
+           //var bothColor = (hiColor << 16 )+ loColor;    //expect this order c0>c1 for 4 colour levels, but gets transparency, so guess is wrong.
+           var bothColor = (loColor << 16 )+ hiColor;
+
+           if (loColor == hiColor){pickerPart=0;}
+                //this might be missing out on something. by setting hi/lo different apart, might still benefit from the 4 shades
+                //where colours in block resolve to same 565 value, but still differ in 888.
 
             newPix = 2*( (blocksAcross-1-aa)*blocksAcross + bb);    //note (blocksAcross-1-aa) instead of just aa, otherwise y flipped. 
-            compressedData[newPix] = newColor;
+            compressedData[newPix] = bothColor;
+            compressedData[newPix+1] = pickerPart;
         }
     }
 

@@ -1,0 +1,30 @@
+would like to use compressed textures, that use less GPU memory, eg s3tc DXT1
+standard practice appears to be to encode images in this format and distribute, and file sizes are somewhat reasonable (DXT1 = 4 bits per pixel).
+however compression for GPU may not be ideal compression for file size, and this is important for web.
+also, loading a compressed texture in webgl seems fiddly - should extract mip levels from file data etc. (there are libraries that do this though)
+
+
+idea:
+use standard image file formats that are supported by browser "directly" (png, jpg etc) (or procedurally generate!)
+generate compressed data and pass this to the gpu.
+
+DX1 is relatively simple.
+make javascript implementation first. expect quite slow.
+do shader implementation.
+	start with grayscale version - no messing about with principal axis, weighting green more etc.
+	load texture, restrict to power of 2 for now. (webgl1)
+	draw to a frame/renderbuffer (?) for each block - ie 0.25* dimensions of input image. output max and min colour. with grayscale, can simply do 2 channels in 1 output framebuffer.		
+	do a second pass using this as additional input. output the bits that describe which of the 4 values best represent each pixel in the block. pack this into 32bit output image.
+		expect some messing about with how float rounding works. TODO some test that can write value that want. just being able to output via drawing an integer passed in as uniform should do.
+	
+	then colour version
+	should be able to output 2 colours in 32bit framebuffer too by packing 565 into 88, or use 2 passes (1 for max, 1 for min), or multiple render targets
+	
+	how to make mipmaps? should stage 1 output the max/min image for use in subsequent calls? other mipmap levels should only have 1/3rd pixels of 0th, but downsizing the starting input image may have some cost.
+	
+
+https://en.wikipedia.org/wiki/S3_Texture_Compression#DXT1
+
+
+source test images eg lena:
+https://www.ece.rice.edu/~wakin/images/
