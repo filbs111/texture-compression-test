@@ -104,7 +104,8 @@ function drawStuff(){
 */
     var activeShaderProgram = shaderPrograms.tex;
     gl.useProgram(activeShaderProgram);
-    bind2dTextureIfRequired(lenaGrayTex);
+    //bind2dTextureIfRequired(lenaGrayTex);
+    bind2dTextureIfRequired(compressedTex);
 	gl.uniform1i(activeShaderProgram.uniforms.uSampler, 0);
     drawObjectFromBuffers(fsBuffers, activeShaderProgram);
 }
@@ -158,8 +159,10 @@ var enableDisableAttributes = (function generateEnableDisableAttributesFunc(){
 })();
 
 var lenaGrayTex;
+var compressedTex;
 function initTexture(){
-	lenaGrayTex = makeTexture("png-src/lena512gray.png");
+    lenaGrayTex = makeTexture("png-src/lena512gray.png");
+    compressedTex = makePlaceholderTexture();
 }
 
 function makePlaceholderTexture(){
@@ -171,31 +174,74 @@ function makePlaceholderTexture(){
 	return texture;
 }
 
+function loadImage(src, callback){
+    var image = new Image();
+    image.onload=callback;
+    image.src = src;
+}
+
 function makeTexture(src, yFlip = true) {	//to do OO
 	var texture = makePlaceholderTexture();
-		
-	//dummy 1 pixel image to avoid error logs. https://stackoverflow.com/questions/21954036/dartweb-gl-render-warning-texture-bound-to-texture-unit-0-is-not-renderable
-		//(TODO better to wait for load, or use single shared 1pix texture (bind2dTextureIfRequired to check that texture loaded, by flag on texture? if not loaded, bind the shared summy image?
-		//TODO progressive detail load?
-	gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE,
-              new Uint8Array([255, 0, 255, 255])); // magenta. should be obvious when tex not loaded.
-	
-	texture.image = new Image();
-	texture.image.onload = function(){
+    
+    loadImage(src, function(loadInfo){
+        var image = loadInfo.srcElement;
 		bind2dTextureIfRequired(texture);
 		gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, yFlip);
 
 		gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);	//linear colorspace grad light texture (TODO handle other texture differently?)
 		
-		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, texture.image);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-		//gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-		gl.generateMipmap(gl.TEXTURE_2D);
-		bind2dTextureIfRequired(null);	//AFAIK this is just good practice to unwanted side effect bugs
-	};	
-	texture.image.src = src;
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+		
+        bind2dTextureIfRequired(null);	//AFAIK this is just good practice to unwanted side effect bugs
+        
+        setupCompressedTextureFromImage(image);
+	});
 	return texture;
+}
+
+function setupCompressedTextureFromImage(img){
+    var canvas = document.createElement('canvas');
+    canvas.width=img.width;
+    canvas.height=img.height;
+    var context = canvas.getContext('2d');
+    context.drawImage(img, 0, 0);
+    var imgData = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    setupCompressedTextureFromImagedata(imgData);
+}
+
+var u8data;
+var u32data;
+function setupCompressedTextureFromImagedata(imagedata){
+    //initial implementation - not compressed, just check can use typed array to copy data.
+
+    u8data = imagedata;
+    u32data = new Uint32Array(imagedata.buffer);
+
+    console.log(imagedata);
+    console.log(u32data);   //see that u32data[0] = u8data[0] + 256*u8data[1] + 256*256*u8data[2] + 256*256*256*u8data[3]
+                        //and can use this to modify or read whole pixel (4 channels) in 1 go
+
+    //set red dot something so can tell that loaded.
+    for (var xx=0;xx<100;xx++){
+        u32data[xx] = 0xFF0000FF;   //red
+    }
+
+    /*
+    var imgSize = 512*512;
+    var imgBlocks = imgSize/16;
+    var compressedImageData = new Int16Array();
+    */
+    
+    bind2dTextureIfRequired(compressedTex);
+        //gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, yFlip);
+        gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);	
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 512, 512, 0, gl.RGBA, gl.UNSIGNED_BYTE, u8data);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    bind2dTextureIfRequired(null);
+    
 }
 
 var bind2dTextureIfRequired = (function createBind2dTextureIfRequiredFunction(){
