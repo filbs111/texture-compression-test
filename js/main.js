@@ -211,16 +211,11 @@ function setupCompressedTextureFromImage(img){
     setupCompressedTextureFromImagedata(imgData);
 }
 
-var u8data;
-var u32data;
-function setupCompressedTextureFromImagedata(imagedata){
-    //initial implementation - not compressed, just check can use typed array to copy data.
+function setupCompressedTextureFromImagedata(u8data){
+    var u32data = new Uint32Array(u8data.buffer);
 
-    u8data = imagedata;
-    u32data = new Uint32Array(imagedata.buffer);
-
-    console.log(imagedata);
-    console.log(u32data);   //see that u32data[0] = u8data[0] + 256*u8data[1] + 256*256*u8data[2] + 256*256*256*u8data[3]
+    console.log(u8data);
+    console.log(u32data);   //see that u32data[0] =  256*256*256*u8data[0] + 256*256*u8data[1] + 256*u8data[2] + u8data[3]
                         //and can use this to modify or read whole pixel (4 channels) in 1 go
 
     //set red dot something so can tell that loaded.
@@ -228,16 +223,40 @@ function setupCompressedTextureFromImagedata(imagedata){
         u32data[xx] = 0xFF0000FF;   //red
     }
 
-    /*
-    var imgSize = 512*512;
-    var imgBlocks = imgSize/16;
-    var compressedImageData = new Int16Array();
-    */
+    var imgSize = 512;
+    var blocksAcross = imgSize/4;
+    var imgBlocks = blocksAcross*blocksAcross;
+
+    var compressedData = new Uint32Array(imgBlocks*2);
+
+    //go through original image, pick a pixel colour from corner of each block.
+    for (var aa=0,pp=0;aa<blocksAcross;aa++,pp+=4){
+        for (var bb=0,qq=0;bb<blocksAcross;bb++,qq+=4){
+                //TODO use dataview? otherwise endianness might mess this up on other machines.
+                // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DataView 
+            var origPix = 4*(pp*imgSize + qq);   //todo get this from additions in loop
+            var pixColorR = u8data[origPix];
+            var pixColorG = u8data[origPix+1];
+            var pixColorB = u8data[origPix+2];
+
+            var newColor = ( (pixColorR >> 3 ) << 11 ) + ( (pixColorG >> 2 ) << 5 ) + (pixColorB >> 3 );
+                //TODO is &&ing and shifting is faster than two shifts?
+
+            newPix = 2*( (blocksAcross-1-aa)*blocksAcross + bb);    //note (blocksAcross-1-aa) instead of just aa, otherwise y flipped. 
+            compressedData[newPix] = newColor;
+        }
+    }
+
+    //var compressedDataUI8 = new Uint8Array(compressedData.buffer);    //can use this just as well as passing compressedData. 
+                                                                        //presumably compressedTexImage2D uses buffer.
     
+    const ext = gl.getExtension('WEBGL_compressed_texture_s3tc'); // will be null if not supported
+
     bind2dTextureIfRequired(compressedTex);
         //gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, yFlip);
         gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);	
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 512, 512, 0, gl.RGBA, gl.UNSIGNED_BYTE, u8data);
+    //    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 512, 512, 0, gl.RGBA, gl.UNSIGNED_BYTE, u8data);
+        gl.compressedTexImage2D(gl.TEXTURE_2D, 0, ext.COMPRESSED_RGBA_S3TC_DXT1_EXT, 512, 512, 0, compressedData); 
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     bind2dTextureIfRequired(null);
