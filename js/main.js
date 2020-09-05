@@ -161,9 +161,12 @@ var enableDisableAttributes = (function generateEnableDisableAttributesFunc(){
 var uncompressedTex;
 var compressedTex;
 function initTexture(){
-    uncompressedTex = makeTexture("png-src/lena512gray.png");
+    //uncompressedTex = makeTexture("png-src/lena512gray.png");
+     //uncompressedTex = makeTexture("png-src/47.png");
     //uncompressedTex = makeTexture("png-src/gradient_linear_512x512.png");
-    //uncompressedTex = makeTexture("png-src/47.png");
+
+    uncompressedTex = makeTexture("png-src/lena512color.png");
+    //uncompressedTex = makeTexture("png-src/baboon.png");
     compressedTex = makePlaceholderTexture();
 }
 
@@ -246,27 +249,53 @@ function setupCompressedTextureFromImagedata(u8data){
                 //TODO is &&ing and shifting is faster than two shifts?
             */
 
-            //grayscale max/min finding.
-           var maxRed = 0;
-           var minRed = 255;
+            //naive color version - take hi,lo colors as (maxr,maxg,maxb) , (minr,ming,minb)
+            //this should reproduce grayscale result, and work for some colour gradients, but
+            //should do a poor job for gradients where one channel increases while another decreases, and doesn't take into account luma
+            //does a good job on lena, but poor job on baboon (see red-blue transition around nose)
+
+            //improved version might look to find regression line through points, and max,min values (or quartiles?) on that scale
+            //though this risks sacrificing luma reproduction
+
+           var maxR = 0;
+           var minR = 255;
+           var maxG = 0;
+           var minG = 255;
+           var maxB = 0;
+           var minB = 255;
            
            var origPix;
            var pixColorR;
+           var pixColorG;
+           var pixColorB;
 
            for (var cc=0;cc<4;cc++){
                 for (var dd=0;dd<4;dd++){
                     origPix = 4*((pp+cc)*imgSize + qq + dd);
                     pixColorR = u8data[origPix];     //TODO put to a local array so don't need to look up again in picker part
-                    maxRed = Math.max(maxRed, pixColorR);
-                    minRed = Math.min(minRed, pixColorR);
+                    maxR = Math.max(maxR, pixColorR);
+                    minR = Math.min(minR, pixColorR);
+                    pixColorG = u8data[origPix+1];
+                    maxG = Math.max(maxG, pixColorG);
+                    minG = Math.min(minG, pixColorG);
+                    pixColorB = u8data[origPix+2];
+                    maxB = Math.max(maxB, pixColorB);
+                    minB = Math.min(minB, pixColorB);
                 }
            }
 
            //test
-           //minRed =0;
-           //maxRed=255;
-
-           var diffRed = 1+maxRed-minRed; //+1 to avoid /0, theseBits=4.
+           /*
+           minR =0;
+           maxR=255;
+           minG =0;
+           maxG=255;
+           minB =0;
+           maxB=255;
+           */
+           var diffR = 1+maxR-minR; //+1 to avoid /0, theseBits=4.
+           var diffG = 1+maxG-minG;
+           var diffB = 1+maxB-minB;
 
            //go thru again, find where on scale each pixel is.
            var pickerPart = 0;
@@ -275,7 +304,10 @@ function setupCompressedTextureFromImagedata(u8data){
                     origPix = 4*((pp+cc)*imgSize + qq + (3-dd));
                     
                     pixColorR = u8data[origPix];
-                    var theseBits = ((4*(pixColorR - minRed))/diffRed) & 3;
+                    pixColorG = u8data[origPix+1];
+                    pixColorB = u8data[origPix+2];
+
+                    var theseBits = (( ((pixColorR - minR)/diffR) + ((pixColorG - minG)/diffG) + ((pixColorB - minB)/diffB) )*1.3333) & 3;
                         //seems like significant bits are switched.  wierd order of c0,c1,c2,c3
                     //theseBits = [1,3,2,0][theseBits];   //likely inefficient formulation!
                     var bitA = (theseBits >> 1);
@@ -286,8 +318,8 @@ function setupCompressedTextureFromImagedata(u8data){
                 }
             }
 
-           var hiColor = ( (maxRed >> 3 ) << 11 ) + ( (maxRed >> 2 ) << 5 ) + (maxRed >> 3 );
-           var loColor = ( (minRed >> 3 ) << 11 ) + ( (minRed >> 2 ) << 5 ) + (minRed >> 3 );
+           var hiColor = ( (maxR >> 3 ) << 11 ) + ( (maxG >> 2 ) << 5 ) + (maxB >> 3 );
+           var loColor = ( (minR >> 3 ) << 11 ) + ( (minG >> 2 ) << 5 ) + (minB >> 3 );
            //var bothColor = (hiColor << 16 )+ loColor;    //expect this order c0>c1 for 4 colour levels, but gets transparency, so guess is wrong.
            var bothColor = (loColor << 16 )+ hiColor;
 

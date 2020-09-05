@@ -28,3 +28,13 @@ https://en.wikipedia.org/wiki/S3_Texture_Compression#DXT1
 
 source test images eg lena:
 https://www.ece.rice.edu/~wakin/images/
+
+
+
+colour compression?
+guess do regression/look for principal axis. 
+in case of smooth gradient, just unweighted principal axis will be right.
+might weight green (or whatever responsible for most perceived brightness) most strongly
+guess better would be to weight the actual perceived brightness vector more strongly (basically scaling points in colour space about this direction, do the regression, scale back)
+
+just do naive implementation first, then look to improve it
