@@ -272,6 +272,48 @@ function setupCompressedTextureFromImagedata(u8data){
             //improved version might look to find regression line through points, and max,min values (or quartiles?) on that scale
             //though this risks sacrificing luma reproduction
 
+
+
+            //pre pass to convert to 565 simple chequerboard dithered (but still in 888 after this pass)
+            //reduces colour banding, near* ensures near flat colour areas have different locolor, hicolor
+            // *fails near black or white
+            //also looks interesting!
+            //might want to add dither in last step (instead), in per pixel pallete choice.
+
+            var doDitherPrepass;
+            doDitherPrepass=true;
+
+            //this could go inside next loop
+            if (doDitherPrepass){
+                var u8clamped = new Uint8ClampedArray(u8data.buffer);
+                var toAdd = 4;
+                var toAdd2 = 2;
+                for (var cc=0;cc<4;cc++){
+                    for (var dd=0;dd<4;dd++){
+                        origPix = 4*((pp+cc)*imgSize + qq + dd);
+
+                        pixColorR = u8clamped[origPix];
+                        pixColorR = ( pixColorR + toAdd );
+                        u8clamped[origPix]=pixColorR; // ^ 7;
+
+                        pixColorG = u8clamped[origPix+1];
+                        pixColorG = ( pixColorG + toAdd2 );
+                        u8clamped[origPix+1]=pixColorG;// ^ 3;
+
+                        pixColorB = u8clamped[origPix+2];
+                        pixColorB = ( pixColorB + toAdd );
+                        u8clamped[origPix+2]=pixColorB;// ^ 7;
+
+                        toAdd = -toAdd;
+                        toAdd2 = -toAdd2;
+                    }
+                    toAdd = -toAdd;
+                    toAdd2 = -toAdd2;
+                }
+
+            }
+
+
            var maxR = 0;
            var minR = 255;
            var maxG = 0;
