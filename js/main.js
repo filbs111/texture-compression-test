@@ -281,8 +281,8 @@ function setupCompressedTextureFromImagedata(u8data){
             //this could go inside next loop
             if (doDitherPrepass){
                 var u8clamped = new Uint8ClampedArray(u8data.buffer);
-                var toAdd = 4;
-                var toAdd2 = 2;
+                var toAdd = 1;
+                var toAdd2 = 0.5;
                 for (var cc=0;cc<4;cc++){
                     for (var dd=0;dd<4;dd++){
                         origPix = 4*((pp+cc)*imgSize + qq + dd);
