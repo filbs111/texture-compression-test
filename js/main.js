@@ -236,11 +236,6 @@ function setupCompressedTextureFromImagedata(u8data){
     console.log(u32data);   //see that u32data[0] =  256*256*256*u8data[0] + 256*256*u8data[1] + 256*u8data[2] + u8data[3]
                         //and can use this to modify or read whole pixel (4 channels) in 1 go
 
-    //set red dot something so can tell that loaded.
-    for (var xx=0;xx<100;xx++){
-        u32data[xx] = 0xFF0000FF;   //red
-    }
-
     var imgSize = 512;
     var blocksAcross = imgSize/4;
     var imgBlocks = blocksAcross*blocksAcross;
@@ -386,6 +381,10 @@ function setupCompressedTextureFromImagedata(u8data){
 
             newPix = 2*( (blocksAcross-1-aa)*blocksAcross + bb);    //note (blocksAcross-1-aa) instead of just aa, otherwise y flipped. 
             compressedData[newPix] = bothColor;
+
+            //detect problems (red) - should ensure that have 2 colour pallete, since likely there are more than 1 original colours in the block
+            if (loColor == hiColor){compressedData[newPix] = 0xf800;}
+
             compressedData[newPix+1] = pickerPart;
         }
     }
