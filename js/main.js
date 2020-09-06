@@ -276,7 +276,7 @@ function setupCompressedTextureFromImagedata(u8data){
             //might want to add dither in last step (instead), in per pixel pallete choice.
 
             var doDitherPrepass;
-            doDitherPrepass=true;
+            //doDitherPrepass=true;
 
             //this could go inside next loop
             if (doDitherPrepass){
@@ -345,12 +345,28 @@ function setupCompressedTextureFromImagedata(u8data){
            minB =0;
            maxB=255;
            */
-           var diffR = 1+maxR-minR; //+1 to avoid /0, theseBits=4.
-           var diffG = 1+maxG-minG;
-           var diffB = 1+maxB-minB;
+
+           //take off last bits so max/min vals are as will be stored
+          
+           minR = minR & (255-7);
+           minG = minG & (255-3);
+           minB = minB & (255-7);
+
+           
+           maxR=Math.min(255,(maxR & (255-7) )+8); //add some so max>min (at least in most cases)
+           maxG=Math.min(255,(maxG & (255-3) )+4);
+           maxB=Math.min(255,(maxB & (255-7) )+8);
+
+           //note that 888<->565 is not as trivial as this. really 0-255 represents 0-1, 0-31, 0-63 does too.
+           //suspect mostly doesn't really matter but that what doing now washes out top values 
+
+           var diffR = maxR-minR; //+1 to avoid /0, theseBits=4.
+           var diffG = maxG-minG;
+           var diffB = maxB-minB;
 
            //go thru again, find where on scale each pixel is.
            var pickerPart = 0;
+           var toAdd = 0.25;       //?? TODO what shift values to use whole range of 4 pallette values?
            for (var cc=0;cc<4;cc++){
                 for (var dd=0;dd<4;dd++){
                     origPix = 4*((pp+cc)*imgSize + qq + (3-dd));
@@ -359,7 +375,7 @@ function setupCompressedTextureFromImagedata(u8data){
                     pixColorG = u8data[origPix+1];
                     pixColorB = u8data[origPix+2];
 
-                    var theseBits = (( ((pixColorR - minR)/diffR) + ((pixColorG - minG)/diffG) + ((pixColorB - minB)/diffB) )*1.3333) & 3;
+                    var theseBits = Math.min(3,Math.max(0, toAdd + ( ((pixColorR - minR)/diffR) + ((pixColorG - minG)/diffG) + ((pixColorB - minB)/diffB) )*1.3333));
                         //seems like significant bits are switched.  wierd order of c0,c1,c2,c3
                     //theseBits = [1,3,2,0][theseBits];   //likely inefficient formulation!
                     var bitA = (theseBits >> 1);
@@ -367,7 +383,10 @@ function setupCompressedTextureFromImagedata(u8data){
 
                     pickerPart = (pickerPart << 2);
                     pickerPart+=theseBits;
+
+                    toAdd = -toAdd;
                 }
+                toAdd = -toAdd;
             }
 
            var hiColor = ( (maxR >> 3 ) << 11 ) + ( (maxG >> 2 ) << 5 ) + (maxB >> 3 );
