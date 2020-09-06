@@ -367,6 +367,7 @@ function setupCompressedTextureFromImagedata(u8data){
            //go thru again, find where on scale each pixel is.
            var pickerPart = 0;
            var toAdd = 0.25;       //?? TODO what shift values to use whole range of 4 pallette values?
+           if (doDitherPrepass){toAdd=0;} //switch off dithering for this stage
            for (var cc=0;cc<4;cc++){
                 for (var dd=0;dd<4;dd++){
                     origPix = 4*((pp+cc)*imgSize + qq + (3-dd));
