@@ -216,8 +216,21 @@ function setupCompressedTextureFromImage(img){
     setupCompressedTextureFromImagedata(imgData);
 }
 
+var timeMeasure = (function(){
+    var lastTime = performance.now();
+
+    return (mystring) => {
+        var timeNow = performance.now();
+        console.log("time measure. " + mystring + ":" + (timeNow - lastTime));
+        lastTime=timeNow;
+    }
+})();
+
+
 function setupCompressedTextureFromImagedata(u8data){
     var u32data = new Uint32Array(u8data.buffer);
+
+    timeMeasure("start");
 
     console.log(u8data);
     console.log(u32data);   //see that u32data[0] =  256*256*256*u8data[0] + 256*256*u8data[1] + 256*u8data[2] + u8data[3]
@@ -233,6 +246,8 @@ function setupCompressedTextureFromImagedata(u8data){
     var imgBlocks = blocksAcross*blocksAcross;
 
     var compressedData = new Uint32Array(imgBlocks*2);
+
+    timeMeasure("done initial stuff");
 
     //go through original image, pick a pixel colour from corner of each block.
     for (var aa=0,pp=0;aa<blocksAcross;aa++,pp+=4){
@@ -333,6 +348,8 @@ function setupCompressedTextureFromImagedata(u8data){
         }
     }
 
+    timeMeasure("done main part");  //512x512 image takes ~10ms on i5 4690
+
     //var compressedDataUI8 = new Uint8Array(compressedData.buffer);    //can use this just as well as passing compressedData. 
                                                                         //presumably compressedTexImage2D uses buffer.
     
@@ -346,7 +363,8 @@ function setupCompressedTextureFromImagedata(u8data){
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     bind2dTextureIfRequired(null);
-    
+
+    timeMeasure("finished compressed tex setup");
 }
 
 var bind2dTextureIfRequired = (function createBind2dTextureIfRequiredFunction(){
