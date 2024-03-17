@@ -5,6 +5,9 @@
 //5 benchmark it. have a go at some optimisation
 //6 gpu implementation!
 
+const TEX_SIZE=512;
+const testImageAddress = "png-src/lena512color.png";
+
 var shaderPrograms={};
 var fsBuffers={};
 
@@ -28,10 +31,13 @@ var fsData = {
 function init(){
     canvas = document.getElementById("glcanvas");
 
+    canvas.width = TEX_SIZE * 2;    //for drawing 2 images side by side
+    canvas.height = TEX_SIZE;
+
     initGL();
     console.log({gl});
     initShaders();
-    initTexture();
+    initTextures();
     initBuffers();
     getLocationsForShaders();
 
@@ -104,10 +110,25 @@ function drawStuff(){
 */
     var activeShaderProgram = shaderPrograms.tex;
     gl.useProgram(activeShaderProgram);
-    //bind2dTextureIfRequired(uncompressedTex);
-    bind2dTextureIfRequired(compressedTex);
+    bind2dTextureIfRequired(uncompressedTexture0);
 	gl.uniform1i(activeShaderProgram.uniforms.uSampler, 0);
+  
+    gl.uniform3f(activeShaderProgram.uniforms.uCentrePos, -0.5,0,0);
+    gl.uniform3f(activeShaderProgram.uniforms.uScale, 0.5,1,1);
+
     drawObjectFromBuffers(fsBuffers, activeShaderProgram);
+
+    //---------------------------------------------------------
+
+    gl.useProgram(activeShaderProgram);
+    bind2dTextureIfRequired(compressedTex1);
+	gl.uniform1i(activeShaderProgram.uniforms.uSampler, 0);
+  
+    gl.uniform3f(activeShaderProgram.uniforms.uCentrePos, 0.5,0,0);
+    gl.uniform3f(activeShaderProgram.uniforms.uScale, 0.5,1,1);
+
+    drawObjectFromBuffers(fsBuffers, activeShaderProgram);
+
 }
 
 
@@ -158,16 +179,54 @@ var enableDisableAttributes = (function generateEnableDisableAttributesFunc(){
 	};
 })();
 
-var uncompressedTex;
-var compressedTex;
-function initTexture(){
-    //uncompressedTex = makeTexture("png-src/lena512gray.png");
-     //uncompressedTex = makeTexture("png-src/47.png");
-    //uncompressedTex = makeTexture("png-src/gradient_linear_512x512.png");
+var uncompressedTexture0;
+var compressedTex1;
 
-    uncompressedTex = makeTexture("png-src/lena512color.png");
-    //uncompressedTex = makeTexture("png-src/baboon.png");
-    compressedTex = makePlaceholderTexture();
+function initTextures(){
+    uncompressedTexture0 = makePlaceholderTexture();
+    compressedTex1 = makePlaceholderTexture();
+
+    
+    makeTexture(testImageAddress,compressedTex1, 
+        image=>{
+            var imgData = setupCompressedTextureFromImage(image);
+            setupCompressedTextureFromImagedata(imgData, compressedTex1);
+    });
+
+    //a regular texture
+    //uncompressedTexture0 = gl.createTexture();
+    var imageToLoad = new Image();
+	imageToLoad.onload = ()=> {
+        //TODO generalise better - below is contained within makeTexture too.
+        //TODO don't load twice (for uncompressed then for creating compressed)
+        bind2dTextureIfRequired(uncompressedTexture0);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);	
+        //note this is different to 3sphere code because that's webgl2!
+        //in webgl 1 can't specify dimensions if loading from an image!
+        // https://developer.mozilla.org/en-US/docs/Web/API/WebGLRenderingContext/texImage2D
+        
+        // full colour. can be relevant to full colour
+        //most examples from jpeg, webp source are 565 already. if want to download textures in regular compression then transcode,
+        // full colour images (eg non-lossy webp) are big anyway, so may as well just download DXT result.
+        // but perhaps AVIF makes this relevant, and also is relevant for compressing procedural images - eg infrequently rendered reflection cubemaps
+        // gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 
+        //     //TEX_SIZE, TEX_SIZE, 0, 
+        //     gl.RGBA, gl.UNSIGNED_BYTE,
+        //     imageToLoad);     
+
+        //565. 
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 
+            //TEX_SIZE, TEX_SIZE, 0, 
+            gl.RGB, gl.UNSIGNED_SHORT_5_6_5,
+            imageToLoad);  
+
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        bind2dTextureIfRequired(null);
+    };
+    imageToLoad.src = testImageAddress;
+
 }
 
 function makePlaceholderTexture(){
@@ -185,10 +244,12 @@ function loadImage(src, callback){
     image.src = src;
 }
 
-function makeTexture(src, yFlip = true) {	//to do OO
+function makeTexture(src, compressedTexToSetUp, cb, yFlip = true) {	//to do OO
 	var texture = makePlaceholderTexture();
     
     loadImage(src, function(loadInfo){
+        var startTime = performance.now();
+
         var image = loadInfo.srcElement;
 		bind2dTextureIfRequired(texture);
 		gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, yFlip);
@@ -201,7 +262,10 @@ function makeTexture(src, yFlip = true) {	//to do OO
 		
         bind2dTextureIfRequired(null);	//AFAIK this is just good practice to unwanted side effect bugs
         
-        setupCompressedTextureFromImage(image);
+        cb(image);
+
+        var endTime = performance.now();
+        console.log(`callback took ${endTime - startTime} milliseconds`)
 	});
 	return texture;
 }
@@ -213,7 +277,7 @@ function setupCompressedTextureFromImage(img){
     var context = canvas.getContext('2d');
     context.drawImage(img, 0, 0);
     var imgData = context.getImageData(0, 0, canvas.width, canvas.height).data;
-    setupCompressedTextureFromImagedata(imgData);
+    return imgData;
 }
 
 var timeMeasure = (function(){
@@ -227,17 +291,17 @@ var timeMeasure = (function(){
 })();
 
 
-function setupCompressedTextureFromImagedata(u8data){
+function setupCompressedTextureFromImagedata(u8data, compressedTexToSetUp){
     var u32data = new Uint32Array(u8data.buffer);
 
-    timeMeasure("start");
 
     console.log(u8data);
     console.log(u32data);   //see that u32data[0] =  256*256*256*u8data[0] + 256*256*u8data[1] + 256*u8data[2] + u8data[3]
                         //and can use this to modify or read whole pixel (4 channels) in 1 go
 
-    var imgSize = 512;
-    var blocksAcross = imgSize/4;
+    timeMeasure("start");
+
+    var blocksAcross = TEX_SIZE/4;
     var imgBlocks = blocksAcross*blocksAcross;
 
     var compressedData = new Uint32Array(imgBlocks*2);
@@ -250,7 +314,7 @@ function setupCompressedTextureFromImagedata(u8data){
                 //TODO use dataview? otherwise endianness might mess this up on other machines.
                 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DataView
             /*
-            var origPix = 4*(pp*imgSize + qq);   //todo get this from additions in loop
+            var origPix = 4*(pp*TEX_SIZE + qq);   //todo get this from additions in loop
             var pixColorR = u8data[origPix];
             var pixColorG = u8data[origPix+1];
             var pixColorB = u8data[origPix+2];
@@ -305,7 +369,7 @@ function setupCompressedTextureFromImagedata(u8data){
 
                 for (var cc=0;cc<4;cc++){
                     for (var dd=0;dd<4;dd++){
-                        origPix = 4*((pp+cc)*imgSize + qq + dd);
+                        origPix = 4*((pp+cc)*TEX_SIZE + qq + dd);
 
                         pixColorR = u8clamped[origPix];
                         pixColorR = ( pixColorR + toAdd + toAddB );
@@ -345,7 +409,7 @@ function setupCompressedTextureFromImagedata(u8data){
 
            for (var cc=0;cc<4;cc++){
                 for (var dd=0;dd<4;dd++){
-                    origPix = 4*((pp+cc)*imgSize + qq + dd);
+                    origPix = 4*((pp+cc)*TEX_SIZE + qq + dd);
                     pixColorR = u8data[origPix];     //TODO put to a local array so don't need to look up again in picker part
                     maxR = Math.max(maxR, pixColorR);
                     minR = Math.min(minR, pixColorR);
@@ -392,7 +456,7 @@ function setupCompressedTextureFromImagedata(u8data){
            if (doDitherPrepass){toAdd=0;} //switch off dithering for this stage
            for (var cc=0;cc<4;cc++){
                 for (var dd=0;dd<4;dd++){
-                    origPix = 4*((pp+cc)*imgSize + qq + (3-dd));
+                    origPix = 4*((pp+cc)*TEX_SIZE + qq + (3-dd));
                     
                     pixColorR = u8data[origPix];
                     pixColorG = u8data[origPix+1];
@@ -438,11 +502,11 @@ function setupCompressedTextureFromImagedata(u8data){
     
     const ext = gl.getExtension('WEBGL_compressed_texture_s3tc'); // will be null if not supported
 
-    bind2dTextureIfRequired(compressedTex);
+    bind2dTextureIfRequired(compressedTexToSetUp);
         //gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, yFlip);
         gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);	
-    //    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 512, 512, 0, gl.RGBA, gl.UNSIGNED_BYTE, u8data);
-        gl.compressedTexImage2D(gl.TEXTURE_2D, 0, ext.COMPRESSED_RGBA_S3TC_DXT1_EXT, 512, 512, 0, compressedData); 
+    //    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, TEX_SIZE, TEX_SIZE, 0, gl.RGBA, gl.UNSIGNED_BYTE, u8data);
+        gl.compressedTexImage2D(gl.TEXTURE_2D, 0, ext.COMPRESSED_RGB_S3TC_DXT1_EXT, TEX_SIZE, TEX_SIZE, 0, compressedData); 
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
     bind2dTextureIfRequired(null);
