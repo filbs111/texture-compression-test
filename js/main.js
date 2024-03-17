@@ -281,27 +281,49 @@ function setupCompressedTextureFromImagedata(u8data){
             //this could go inside next loop
             if (doDitherPrepass){
                 var u8clamped = new Uint8ClampedArray(u8data.buffer);
-                var toAdd = 1;
-                var toAdd2 = 0.5;
+
+                var spread1 = 8;   
+                var spread2 = 4;    //spread = pix values between consecutive 565 color value in 8-bit
+                spread1/=2;spread2/=2;  //expected to work using above values , but appears to work better if halve. why?
+
+                var toAdd, toAdd2, toAddB, toAddB2;
+
+                var selectChequer
+                selectChequer=false;
+
+                if (selectChequer){
+                    toAdd = (1/4)*spread1;      //chequerboard.
+                    toAdd2 = (1/4)*spread2;
+                    toAddB = 0;
+                    toAddB2 = 0;
+                }else{
+                    toAdd = (3/8)*spread1;      //2x2 . unpleasant banding. guess is why 4x4 popular
+                    toAdd2 = (3/8)*spread2;
+                    toAddB = (1/3)*spread1;
+                    toAddB2 = (1/3)*spread2;
+                }
+
                 for (var cc=0;cc<4;cc++){
                     for (var dd=0;dd<4;dd++){
                         origPix = 4*((pp+cc)*imgSize + qq + dd);
 
                         pixColorR = u8clamped[origPix];
-                        pixColorR = ( pixColorR + toAdd );
+                        pixColorR = ( pixColorR + toAdd + toAddB );
                         u8clamped[origPix]=pixColorR; // ^ 7;
 
                         pixColorG = u8clamped[origPix+1];
-                        pixColorG = ( pixColorG + toAdd2 );
+                        pixColorG = ( pixColorG + toAdd2 + toAddB2);
                         u8clamped[origPix+1]=pixColorG;// ^ 3;
 
                         pixColorB = u8clamped[origPix+2];
-                        pixColorB = ( pixColorB + toAdd );
+                        pixColorB = ( pixColorB + toAdd + toAddB );
                         u8clamped[origPix+2]=pixColorB;// ^ 7;
 
                         toAdd = -toAdd;
                         toAdd2 = -toAdd2;
                     }
+                    toAddB = -toAddB;
+                    toAddB2 = -toAddB2;
                     toAdd = -toAdd;
                     toAdd2 = -toAdd2;
                 }
