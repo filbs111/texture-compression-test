@@ -189,8 +189,23 @@ function initTextures(){
     
     makeTexture(testImageAddress,compressedTex1, 
         image=>{
-            var imgData = setupCompressedTextureFromImage(image);
-            setupCompressedTextureFromImagedata(imgData, compressedTex1);
+
+            var numLevels = 1 + Math.log2(TEX_SIZE);
+
+            var imgDataArr = setupCompressedTextureFromImage(image, numLevels);
+            var mipSize = TEX_SIZE;
+            for (var mipLevel=0;mipLevel<imgDataArr.length;mipLevel++){
+                setupCompressedTextureFromImagedata(imgDataArr[mipLevel], compressedTex1, mipLevel, mipSize);
+                mipSize/=2;
+            }
+            //finalise setup? (maybe this shoudl come at the end)
+            bind2dTextureIfRequired(compressedTex1);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+            //gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
+            bind2dTextureIfRequired(null);
+
     });
 
     //a regular texture
@@ -221,8 +236,12 @@ function initTextures(){
             gl.RGB, gl.UNSIGNED_SHORT_5_6_5,
             imageToLoad);  
 
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+
+        gl.generateMipmap(gl.TEXTURE_2D);
+
+
         bind2dTextureIfRequired(null);
     };
     imageToLoad.src = testImageAddress;
@@ -257,8 +276,8 @@ function makeTexture(src, compressedTexToSetUp, cb, yFlip = true) {	//to do OO
 		gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);	//linear colorspace grad light texture (TODO handle other texture differently?)
 		
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
 		
         bind2dTextureIfRequired(null);	//AFAIK this is just good practice to unwanted side effect bugs
         
@@ -270,14 +289,30 @@ function makeTexture(src, compressedTexToSetUp, cb, yFlip = true) {	//to do OO
 	return texture;
 }
 
-function setupCompressedTextureFromImage(img){
+function setupCompressedTextureFromImage(img, numlevels){
     var canvas = document.createElement('canvas');
     canvas.width=img.width;
     canvas.height=img.height;
     var context = canvas.getContext('2d');
-    context.drawImage(img, 0, 0);
-    var imgData = context.getImageData(0, 0, canvas.width, canvas.height).data;
-    return imgData;
+
+    var imgDataArr=[];
+
+    var dstSize = TEX_SIZE;
+
+    for (var ii=0;ii<numlevels;ii++){
+        context.drawImage(img, 0, 0, TEX_SIZE,TEX_SIZE, 0,0, dstSize,dstSize);
+
+        context.fillStyle=["red","green","blue","yellow","cyan","magenta"][ii%6];
+        context.fillRect(0,0,100,100);  //make mip level obvious
+
+        imgDataArr.push( context.getImageData(0, 0, dstSize, dstSize).data );
+        if (dstSize>4){dstSize/=2;}
+            //^^ so have at least 1 4x4 block
+    }
+
+    console.log(imgDataArr);
+
+    return imgDataArr;
 }
 
 var timeMeasure = (function(){
@@ -291,9 +326,8 @@ var timeMeasure = (function(){
 })();
 
 
-function setupCompressedTextureFromImagedata(u8data, compressedTexToSetUp){
+function setupCompressedTextureFromImagedata(u8data, compressedTexToSetUp, mipLevel, mipTexSize){
     var u32data = new Uint32Array(u8data.buffer);
-
 
     console.log(u8data);
     console.log(u32data);   //see that u32data[0] =  256*256*256*u8data[0] + 256*256*u8data[1] + 256*u8data[2] + u8data[3]
@@ -301,7 +335,9 @@ function setupCompressedTextureFromImagedata(u8data, compressedTexToSetUp){
 
     timeMeasure("start");
 
-    var blocksAcross = TEX_SIZE/4;
+    var mipSize = Math.max(4,mipTexSize);
+
+    var blocksAcross = mipSize/4;
     var imgBlocks = blocksAcross*blocksAcross;
 
     var compressedData = new Uint32Array(imgBlocks*2);
@@ -314,7 +350,7 @@ function setupCompressedTextureFromImagedata(u8data, compressedTexToSetUp){
                 //TODO use dataview? otherwise endianness might mess this up on other machines.
                 // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DataView
             /*
-            var origPix = 4*(pp*TEX_SIZE + qq);   //todo get this from additions in loop
+            var origPix = 4*(pp*mipSize + qq);   //todo get this from additions in loop
             var pixColorR = u8data[origPix];
             var pixColorG = u8data[origPix+1];
             var pixColorB = u8data[origPix+2];
@@ -369,7 +405,7 @@ function setupCompressedTextureFromImagedata(u8data, compressedTexToSetUp){
 
                 for (var cc=0;cc<4;cc++){
                     for (var dd=0;dd<4;dd++){
-                        origPix = 4*((pp+cc)*TEX_SIZE + qq + dd);
+                        origPix = 4*((pp+cc)*mipSize + qq + dd);
 
                         pixColorR = u8clamped[origPix];
                         pixColorR = ( pixColorR + toAdd + toAddB );
@@ -409,7 +445,7 @@ function setupCompressedTextureFromImagedata(u8data, compressedTexToSetUp){
 
            for (var cc=0;cc<4;cc++){
                 for (var dd=0;dd<4;dd++){
-                    origPix = 4*((pp+cc)*TEX_SIZE + qq + dd);
+                    origPix = 4*((pp+cc)*mipSize + qq + dd);
                     pixColorR = u8data[origPix];     //TODO put to a local array so don't need to look up again in picker part
                     maxR = Math.max(maxR, pixColorR);
                     minR = Math.min(minR, pixColorR);
@@ -456,7 +492,7 @@ function setupCompressedTextureFromImagedata(u8data, compressedTexToSetUp){
            if (doDitherPrepass){toAdd=0;} //switch off dithering for this stage
            for (var cc=0;cc<4;cc++){
                 for (var dd=0;dd<4;dd++){
-                    origPix = 4*((pp+cc)*TEX_SIZE + qq + (3-dd));
+                    origPix = 4*((pp+cc)*mipSize + qq + (3-dd));
                     
                     pixColorR = u8data[origPix];
                     pixColorG = u8data[origPix+1];
@@ -500,15 +536,19 @@ function setupCompressedTextureFromImagedata(u8data, compressedTexToSetUp){
     //var compressedDataUI8 = new Uint8Array(compressedData.buffer);    //can use this just as well as passing compressedData. 
                                                                         //presumably compressedTexImage2D uses buffer.
     
-    const ext = gl.getExtension('WEBGL_compressed_texture_s3tc'); // will be null if not supported
+    var ext = gl.getExtension('WEBGL_compressed_texture_s3tc'); // will be null if not supported
+
+    console.log("will set up texture level " + mipLevel + " with dimensions " + mipSize);
 
     bind2dTextureIfRequired(compressedTexToSetUp);
         //gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, yFlip);
         gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);	
-    //    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, TEX_SIZE, TEX_SIZE, 0, gl.RGBA, gl.UNSIGNED_BYTE, u8data);
-        gl.compressedTexImage2D(gl.TEXTURE_2D, 0, ext.COMPRESSED_RGB_S3TC_DXT1_EXT, TEX_SIZE, TEX_SIZE, 0, compressedData); 
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    //    gl.texImage2D(gl.TEXTURE_2D, mipLevel, gl.RGBA, mipSize, mipSize, 0, gl.RGBA, gl.UNSIGNED_BYTE, u8data);
+        gl.compressedTexImage2D(gl.TEXTURE_2D, mipLevel, ext.COMPRESSED_RGB_S3TC_DXT1_EXT, mipTexSize, mipTexSize, 0, compressedData); 
+        
+  //      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+   //     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+
     bind2dTextureIfRequired(null);
 
     timeMeasure("finished compressed tex setup");

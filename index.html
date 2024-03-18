@@ -12,7 +12,7 @@
         varying vec2 vTextureCoord;
 
         void main(void) {
-            gl_Position = vec4(uCentrePos + uScale*aVertexPosition, 1.0);
+            gl_Position = vec4(uCentrePos + .9*uScale*aVertexPosition, 1.0);
             vTextureCoord = 0.5 + 0.5*aVertexPosition.xy;
         }
     </script>
