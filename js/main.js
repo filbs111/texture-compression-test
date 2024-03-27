@@ -5,8 +5,9 @@
 //5 benchmark it. have a go at some optimisation
 //6 gpu implementation!
 
-const TEX_SIZE=512;
-const testImageAddress = "png-src/lena512color.png";
+const TEX_SIZE=512;const testImageAddress = "png-src/lena512color.png";
+//const TEX_SIZE=512;const testImageAddress = "png-src/baboon.png";
+//const TEX_SIZE=1024;const testImageAddress = "raw-src/sunset.webp";
 
 var shaderPrograms={};
 var fsBuffers={};
@@ -53,6 +54,7 @@ function init(){
 function initShaders(){
     shaderPrograms.flatcolor = loadShader("shader-basic-vs", "shader-flatcolor-fs");
     shaderPrograms.tex = loadShader("shader-basic-vs", "shader-tex-fs");
+    shaderPrograms.texDxt5 = loadShader("shader-basic-vs", "shader-tex-fs-dxt5");
 }
 
 function initBuffers(){
@@ -120,6 +122,7 @@ function drawStuff(){
 
     //---------------------------------------------------------
 
+    var activeShaderProgram = shaderPrograms.texDxt5;
     gl.useProgram(activeShaderProgram);
     bind2dTextureIfRequired(compressedTex1);
 	gl.uniform1i(activeShaderProgram.uniforms.uSampler, 0);
@@ -187,26 +190,48 @@ function initTextures(){
     compressedTex1 = makePlaceholderTexture();
 
     
-    makeTexture(testImageAddress,compressedTex1, 
+    // makeTexture(testImageAddress, 
+    //     image=>{
+
+    //         var numLevels = 1 + Math.log2(TEX_SIZE);
+
+    //         var imgDataArr = setupCompressedTextureFromImage(image, numLevels);
+    //         var mipSize = TEX_SIZE;
+    //         for (var mipLevel=0;mipLevel<imgDataArr.length;mipLevel++){
+    //             setupCompressedTextureFromImagedata(imgDataArr[mipLevel], compressedTex1, mipLevel, mipSize);
+    //             mipSize/=2;
+    //         }
+    //         //finalise setup? (maybe this shoudl come at the end)
+    //         bind2dTextureIfRequired(compressedTex1);
+    //         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    //         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    //         //gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+
+    //         bind2dTextureIfRequired(null);
+    // });
+
+    //DXT5
+    makeTexture(testImageAddress, 
         image=>{
 
             var numLevels = 1 + Math.log2(TEX_SIZE);
 
-            var imgDataArr = setupCompressedTextureFromImage(image, numLevels);
+            var imgDataArr = setupCompressedTextureFromImage(image, numLevels); //TODO reuse DXT1 result? 
             var mipSize = TEX_SIZE;
             for (var mipLevel=0;mipLevel<imgDataArr.length;mipLevel++){
-                setupCompressedTextureFromImagedata(imgDataArr[mipLevel], compressedTex1, mipLevel, mipSize);
+                setupCompressedTextureDxt5FromImagedata(imgDataArr[mipLevel], compressedTex1, mipLevel, mipSize);
                 mipSize/=2;
             }
             //finalise setup? (maybe this shoudl come at the end)
             bind2dTextureIfRequired(compressedTex1);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-            //gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
 
             bind2dTextureIfRequired(null);
-
     });
+
+    
+
 
     //a regular texture
     //uncompressedTexture0 = gl.createTexture();
@@ -245,6 +270,25 @@ function initTextures(){
         bind2dTextureIfRequired(null);
     };
     imageToLoad.src = testImageAddress;
+    
+
+    //DXT5.
+    // many options to encode, but say encode as r',g',b' = (r,g,b)/(r+g+b) , a' = r+g+b, then can get back original
+    // r,g,b = (r',g',b')*a',
+    //but this loses some precision, since alpha should be scaled so = 1 at (1,1,1), =1/3 at (1,0,0), (0,1,0), (0,0,1)
+    //instead might encode 
+    // a' = max(r,g,b)
+    //then to reconstruct
+    // r,g,b = (r',g',b') * a'*max(r',g',b')
+    // but perhaps this is inefficient
+
+    //perhaps instead of r+g+b do, say, r+2g+b
+    //since want to emulate 565 anyway
+
+    //or just store green in alpha, r,b in rgb (either don't use one channel r'=0, g'=r, b'=b, a'=g , so have ~8bit green, 6 bit red, 5 bit blue
+    // or store b across r',b' diagonally (shifted by half a step?) to get extra bit?
+    // suppose have simple, 685 bits, seems decent fit for luma.
+    
 
 }
 
@@ -263,7 +307,7 @@ function loadImage(src, callback){
     image.src = src;
 }
 
-function makeTexture(src, compressedTexToSetUp, cb, yFlip = true) {	//to do OO
+function makeTexture(src, cb, yFlip = true) {	//to do OO
 	var texture = makePlaceholderTexture();
     
     loadImage(src, function(loadInfo){
@@ -302,8 +346,8 @@ function setupCompressedTextureFromImage(img, numlevels){
     for (var ii=0;ii<numlevels;ii++){
         context.drawImage(img, 0, 0, TEX_SIZE,TEX_SIZE, 0,0, dstSize,dstSize);
 
-        context.fillStyle=["red","green","blue","yellow","cyan","magenta"][ii%6];
-        context.fillRect(0,0,100,100);  //make mip level obvious
+        //context.fillStyle=["red","green","blue","yellow","cyan","magenta"][ii%6];
+        //context.fillRect(0,0,100,100);  //make mip level obvious
 
         imgDataArr.push( context.getImageData(0, 0, dstSize, dstSize).data );
         if (dstSize>4){dstSize/=2;}
@@ -376,7 +420,7 @@ function setupCompressedTextureFromImagedata(u8data, compressedTexToSetUp, mipLe
             //might want to add dither in last step (instead), in per pixel pallete choice.
 
             var doDitherPrepass;
-            //doDitherPrepass=true;
+            doDitherPrepass=true;
 
             //this could go inside next loop
             if (doDitherPrepass){
@@ -402,6 +446,7 @@ function setupCompressedTextureFromImagedata(u8data, compressedTexToSetUp, mipLe
                     toAddB = (1/3)*spread1;
                     toAddB2 = (1/3)*spread2;
                 }
+
 
                 for (var cc=0;cc<4;cc++){
                     for (var dd=0;dd<4;dd++){
@@ -514,6 +559,11 @@ function setupCompressedTextureFromImagedata(u8data, compressedTexToSetUp, mipLe
 
            var hiColor = ( (maxR >> 3 ) << 11 ) + ( (maxG >> 2 ) << 5 ) + (maxB >> 3 );
            var loColor = ( (minR >> 3 ) << 11 ) + ( (minG >> 2 ) << 5 ) + (minB >> 3 );
+
+           //override colours for debug
+           // hiColor = 0xffff;
+           // loColor=0x0000;
+
            //var bothColor = (hiColor << 16 )+ loColor;    //expect this order c0>c1 for 4 colour levels, but gets transparency, so guess is wrong.
            var bothColor = (loColor << 16 )+ hiColor;
 
@@ -553,6 +603,196 @@ function setupCompressedTextureFromImagedata(u8data, compressedTexToSetUp, mipLe
 
     timeMeasure("finished compressed tex setup");
 }
+
+
+/*
+basic version. store green in alpha, red, blue in gb, pallete is simple minmax
+*/
+function setupCompressedTextureDxt5FromImagedata(u8data, compressedTexToSetUp, mipLevel, mipTexSize){
+    var u32data = new Uint32Array(u8data.buffer);
+
+    timeMeasure("start");
+
+    var mipSize = Math.max(4,mipTexSize);
+
+    var blocksAcross = mipSize/4;
+    var imgBlocks = blocksAcross*blocksAcross;
+
+    var compressedData = new Uint32Array(imgBlocks*4);
+
+    timeMeasure("done initial stuff");
+
+    //go through original image, pick a pixel colour from corner of each block.
+    for (var aa=0,pp=0;aa<blocksAcross;aa++,pp+=4){
+        for (var bb=0,qq=0;bb<blocksAcross;bb++,qq+=4){
+                //TODO use dataview? otherwise endianness might mess this up on other machines.
+                // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/DataView
+
+           var maxR = 0;
+           var minR = 255;
+           var maxG = 0;
+           var minG = 255;
+           var maxB = 0;
+           var minB = 255;
+           
+           var origPix;
+           var pixColorR;
+           var pixColorG;
+           var pixColorB;
+
+           for (var cc=0;cc<4;cc++){
+                for (var dd=0;dd<4;dd++){
+                    origPix = 4*((pp+cc)*mipSize + qq + dd);
+                    pixColorR = u8data[origPix];     //TODO put to a local array so don't need to look up again in picker part
+                    maxR = Math.max(maxR, pixColorR);
+                    minR = Math.min(minR, pixColorR);
+                    pixColorG = u8data[origPix+1];
+                    maxG = Math.max(maxG, pixColorG);
+                    minG = Math.min(minG, pixColorG);
+                    pixColorB = u8data[origPix+2];
+                    maxB = Math.max(maxB, pixColorB);
+                    minB = Math.min(minB, pixColorB);
+                }
+           }
+
+
+           //take off last bits so max/min vals are as will be stored          
+           minR = minR & (255-3);
+           minB = minB & (255-7);
+           
+           maxR=Math.min(255,(maxR & (255-3) )+4); //add some so max>min (at least in most cases)
+           maxB=Math.min(255,(maxB & (255-7) )+8);
+
+           //override TODO don't do this
+           //minG = 0;
+           //maxG=255;
+
+            //bodge? doesn't seem to do much
+            //minG = Math.max(0,minG-5);
+            //maxG = Math.min(255,maxG+5);
+          
+
+
+           var diffR = maxR-minR; //+1 to avoid /0, theseBits=4.
+           var diffG = maxG-minG;
+           var diffB = maxB-minB;
+
+           //go thru again, find where on scale each pixel is.
+           var pickerPart = 0;
+           var alphaPickerPart = 0;
+           var toAdd = 0.25;       //?? TODO what shift values to use whole range of 4 pallette values?
+           //var toAddAlpha = 0.125;  //guess. TODO use?
+           for (var cc=0;cc<4;cc++){
+                for (var dd=0;dd<4;dd++){
+                    origPix = 4*((pp+cc)*mipSize + qq + (3-dd));
+                    
+                    pixColorR = u8data[origPix];
+                    pixColorG = u8data[origPix+1];
+                    pixColorB = u8data[origPix+2];
+
+                    var theseBits = Math.min(3,Math.max(0, toAdd + ( ((pixColorR - minR)/diffR) + ((pixColorB - minB)/diffB) )*2));
+                        //seems like significant bits are switched.  wierd order of c0,c1,c2,c3
+
+                    theseBits =  [1,3,2,0][Math.floor(theseBits)];
+
+                    //theseBits = [1,3,2,0][theseBits];   //likely inefficient formulation!
+
+                    //var bitA = (theseBits >> 1);
+                    //theseBits = ( 1-bitA )+ ( (( bitA + theseBits) & 1) <<1 );  //faster?
+
+                    pickerPart = (pickerPart << 2);
+                    pickerPart+=theseBits;
+
+                    toAdd = -toAdd;
+
+                    //do similar to hold green in alpha channel
+                    var theseAlphaBits = Math.floor(0.5+ Math.min(7,Math.max(0, 0+ 7*(pixColorG - minG)/diffG)));
+
+                    //wierd order https://en.wikipedia.org/wiki/S3_Texture_Compression
+                    theseAlphaBits = [1,7,6,5,4,3,2,0][theseAlphaBits];
+                    
+                    alphaPickerPart = alphaPickerPart*8;
+                    alphaPickerPart+=theseAlphaBits;
+                }
+                toAdd = -toAdd;
+            }
+
+           var hiColor = ( (maxR >> 2 ) << 5 ) + (maxB >> 3 );
+           var loColor = ( (minR >> 2 ) << 5 ) + (minB >> 3 );
+
+           //override colours for debug
+           // hiColor = 0xffff;
+           // loColor=0x0000;
+
+           //var bothColor = (hiColor << 16 )+ loColor;    //expect this order c0>c1 for 4 colour levels, but gets transparency, so guess is wrong.
+           var bothColor = (loColor << 16 )+ hiColor;
+
+           if (loColor == hiColor){pickerPart=0;}
+                //this might be missing out on something. by setting hi/lo different apart, might still benefit from the 4 shades
+                //where colours in block resolve to same 565 value, but still differ in 888.
+
+            newPix = 4*( (blocksAcross-1-aa)*blocksAcross + bb);    //note (blocksAcross-1-aa) instead of just aa, otherwise y flipped. 
+            compressedData[newPix+2] = bothColor;
+
+            //detect problems (red) - should ensure that have 2 colour pallete, since likely there are more than 1 original colours in the block
+            //if (loColor == hiColor){compressedData[newPix+2] = 0xf800;}
+
+            compressedData[newPix+3] = pickerPart;
+
+
+            //alpha part. colours are 16 bits, picker parts are 48 bits, making this awkward
+            // TODO improve this? 16 bit data view?
+            var hiAlpha = maxG;
+            var loAlpha = minG;
+
+            //override for sanity check
+            //hiAlpha =255;
+            //loAlpha =0;
+
+            var bothAlpha = loAlpha *256 + hiAlpha;
+
+            if (hiAlpha == loAlpha){
+                alphaPickerPart=0;
+                compressedData[newPix] = bothAlpha; //be explicit about this in an if (should just be able to proceed below though if just ensure
+                        //there's always a difference.)
+                compressedData[newPix+1] = 0;
+            }else{
+
+                var first16BitsOfAlphaPickerPart = Math.floor( alphaPickerPart / 0x100000000 ); //shitty but hope to prove concept
+                var first32BitsOfAlphaPickerPart = Math.floor( alphaPickerPart / 0x10000 );
+                var last16BitsOfAlphaPickerPart = alphaPickerPart - (first32BitsOfAlphaPickerPart* 0x10000);
+                var last32BitsOfAlphaPickerPart = alphaPickerPart - (first16BitsOfAlphaPickerPart* 0x100000000);
+
+                var first16OfLast32 = Math.floor(last32BitsOfAlphaPickerPart/0x10000);
+                var last16OfLast32 = last16BitsOfAlphaPickerPart;
+
+                compressedData[newPix] = bothAlpha + (last16OfLast32 * 0x10000);
+                compressedData[newPix+1] = (first16BitsOfAlphaPickerPart*0x10000)+ first16OfLast32;
+            }
+
+        }
+    }
+
+    timeMeasure("done main part");  //512x512 image takes ~10ms on i5 4690
+
+    //var compressedDataUI8 = new Uint8Array(compressedData.buffer);    //can use this just as well as passing compressedData. 
+                                                                        //presumably compressedTexImage2D uses buffer.
+    
+    var ext = gl.getExtension('WEBGL_compressed_texture_s3tc'); // will be null if not supported
+
+    console.log("will set up texture level " + mipLevel + " with dimensions " + mipSize);
+
+    bind2dTextureIfRequired(compressedTexToSetUp);
+    gl.pixelStorei(gl.UNPACK_COLORSPACE_CONVERSION_WEBGL, gl.NONE);	
+    gl.compressedTexImage2D(gl.TEXTURE_2D, mipLevel, ext.COMPRESSED_RGBA_S3TC_DXT5_EXT, mipTexSize, mipTexSize, 0, compressedData); 
+    
+    bind2dTextureIfRequired(null);
+
+    timeMeasure("finished compressed tex setup");
+}
+
+
+
 
 var bind2dTextureIfRequired = (function createBind2dTextureIfRequiredFunction(){
 	var currentlyBoundTextures=[];

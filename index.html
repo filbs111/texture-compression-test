@@ -36,6 +36,20 @@
         }
     </script>
 
+    <script id="shader-tex-fs-dxt5" type="x-shader/x-fragment">    
+        precision mediump float;
+        uniform sampler2D uSampler;
+        varying vec2 vTextureCoord;
+
+        void main(void) {
+            vec4 unswizzled = texture2D(uSampler, vTextureCoord);
+            gl_FragColor = vec4(unswizzled.g, unswizzled.a, unswizzled.b, 1.0);
+            //gl_FragColor = vec4(0.0, unswizzled.a, 0.0, 1.0);   //screwed
+            //gl_FragColor = vec4(unswizzled.g, 0.0, unswizzled.b, 1.0);  //seems fine
+
+        }
+    </script>
+
 
     <script src="utils/webgl_utils.js"></script>
     <script src="js/main.js"></script>
