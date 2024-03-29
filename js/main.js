@@ -201,45 +201,30 @@ function initTextures(){
     compressedTexDxt1 = makePlaceholderTexture();
     compressedTexDxt5 = makePlaceholderTexture();
     
-    makeTexture(testImageAddress, 
-        image=>{
+    makeCompressedTexture(testImageAddress, compressedTexDxt1, setupCompressedTextureDxt1FromImagedata);
+    makeCompressedTexture(testImageAddress, compressedTexDxt5, setupCompressedTextureDxt5FromImagedata);
+    
 
-            var numLevels = 1 + Math.log2(TEX_SIZE);
-
-            var imgDataArr = setupCompressedTextureFromImage(image, numLevels);
-            var mipSize = TEX_SIZE;
-            for (var mipLevel=0;mipLevel<imgDataArr.length;mipLevel++){
-                setupCompressedTextureFromImagedata(imgDataArr[mipLevel], compressedTexDxt1, mipLevel, mipSize);
-                mipSize/=2;
-            }
-            //finalise setup? (maybe this shoudl come at the end)
-            bind2dTextureIfRequired(compressedTexDxt1);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-            //gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-
-            bind2dTextureIfRequired(null);
-    });
-
-    //DXT5
-    makeTexture(testImageAddress, 
-        image=>{
-
-            var numLevels = 1 + Math.log2(TEX_SIZE);
-
-            var imgDataArr = setupCompressedTextureFromImage(image, numLevels); //TODO reuse DXT1 result? 
-            var mipSize = TEX_SIZE;
-            for (var mipLevel=0;mipLevel<imgDataArr.length;mipLevel++){
-                setupCompressedTextureDxt5FromImagedata(imgDataArr[mipLevel], compressedTexDxt5, mipLevel, mipSize);
-                mipSize/=2;
-            }
-            //finalise setup? (maybe this shoudl come at the end)
-            bind2dTextureIfRequired(compressedTexDxt5);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-
-            bind2dTextureIfRequired(null);
-    });
+    function makeCompressedTexture(testImageAddress, texture, setupFunc){
+        makeTexture(testImageAddress, 
+            image=>{
+    
+                var numLevels = 1 + Math.log2(TEX_SIZE);
+    
+                var imgDataArr = setupCompressedTextureFromImage(image, numLevels); //TODO reuse DXT1 result? 
+                var mipSize = TEX_SIZE;
+                for (var mipLevel=0;mipLevel<imgDataArr.length;mipLevel++){
+                    setupFunc(imgDataArr[mipLevel], texture, mipLevel, mipSize);
+                    mipSize/=2;
+                }
+                //finalise setup? (maybe this shoudl come at the end)
+                bind2dTextureIfRequired(texture);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+    
+                bind2dTextureIfRequired(null);
+        });
+    }
 
     
 
@@ -381,7 +366,7 @@ var timeMeasure = (function(){
 })();
 
 
-function setupCompressedTextureFromImagedata(u8data, compressedTexToSetUp, mipLevel, mipTexSize){
+function setupCompressedTextureDxt1FromImagedata(u8data, compressedTexToSetUp, mipLevel, mipTexSize){
     var u32data = new Uint32Array(u8data.buffer);
 
     console.log(u8data);
