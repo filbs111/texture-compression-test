@@ -33,7 +33,7 @@ function init(){
     canvas = document.getElementById("glcanvas");
 
     canvas.width = TEX_SIZE * 2;    //for drawing 2 images side by side
-    canvas.height = TEX_SIZE;
+    canvas.height = TEX_SIZE * 2;
 
     initGL();
     console.log({gl});
@@ -115,20 +115,30 @@ function drawStuff(){
     bind2dTextureIfRequired(uncompressedTexture0);
 	gl.uniform1i(activeShaderProgram.uniforms.uSampler, 0);
   
-    gl.uniform3f(activeShaderProgram.uniforms.uCentrePos, -0.5,0,0);
-    gl.uniform3f(activeShaderProgram.uniforms.uScale, 0.5,1,1);
+    gl.uniform3f(activeShaderProgram.uniforms.uCentrePos, -0.5,0.5,0);
+    gl.uniform3f(activeShaderProgram.uniforms.uScale, 0.5,0.5,1);
 
     drawObjectFromBuffers(fsBuffers, activeShaderProgram);
+
+    //
+    bind2dTextureIfRequired(compressedTexDxt1);
+	gl.uniform1i(activeShaderProgram.uniforms.uSampler, 0);
+  
+    gl.uniform3f(activeShaderProgram.uniforms.uCentrePos, 0.5,0.5,0);
+    gl.uniform3f(activeShaderProgram.uniforms.uScale, 0.5,0.5,1);
+
+    drawObjectFromBuffers(fsBuffers, activeShaderProgram);
+
 
     //---------------------------------------------------------
 
     var activeShaderProgram = shaderPrograms.texDxt5;
     gl.useProgram(activeShaderProgram);
-    bind2dTextureIfRequired(compressedTex1);
+    bind2dTextureIfRequired(compressedTexDxt5);
 	gl.uniform1i(activeShaderProgram.uniforms.uSampler, 0);
   
-    gl.uniform3f(activeShaderProgram.uniforms.uCentrePos, 0.5,0,0);
-    gl.uniform3f(activeShaderProgram.uniforms.uScale, 0.5,1,1);
+    gl.uniform3f(activeShaderProgram.uniforms.uCentrePos, -0.5,-0.5,0);
+    gl.uniform3f(activeShaderProgram.uniforms.uScale, 0.5,0.5,1);
 
     drawObjectFromBuffers(fsBuffers, activeShaderProgram);
 
@@ -183,32 +193,33 @@ var enableDisableAttributes = (function generateEnableDisableAttributesFunc(){
 })();
 
 var uncompressedTexture0;
-var compressedTex1;
+var compressedTexDxt1;
+var compressedTexDxt5;
 
 function initTextures(){
     uncompressedTexture0 = makePlaceholderTexture();
-    compressedTex1 = makePlaceholderTexture();
-
+    compressedTexDxt1 = makePlaceholderTexture();
+    compressedTexDxt5 = makePlaceholderTexture();
     
-    // makeTexture(testImageAddress, 
-    //     image=>{
+    makeTexture(testImageAddress, 
+        image=>{
 
-    //         var numLevels = 1 + Math.log2(TEX_SIZE);
+            var numLevels = 1 + Math.log2(TEX_SIZE);
 
-    //         var imgDataArr = setupCompressedTextureFromImage(image, numLevels);
-    //         var mipSize = TEX_SIZE;
-    //         for (var mipLevel=0;mipLevel<imgDataArr.length;mipLevel++){
-    //             setupCompressedTextureFromImagedata(imgDataArr[mipLevel], compressedTex1, mipLevel, mipSize);
-    //             mipSize/=2;
-    //         }
-    //         //finalise setup? (maybe this shoudl come at the end)
-    //         bind2dTextureIfRequired(compressedTex1);
-    //         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    //         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    //         //gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            var imgDataArr = setupCompressedTextureFromImage(image, numLevels);
+            var mipSize = TEX_SIZE;
+            for (var mipLevel=0;mipLevel<imgDataArr.length;mipLevel++){
+                setupCompressedTextureFromImagedata(imgDataArr[mipLevel], compressedTexDxt1, mipLevel, mipSize);
+                mipSize/=2;
+            }
+            //finalise setup? (maybe this shoudl come at the end)
+            bind2dTextureIfRequired(compressedTexDxt1);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+            //gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
 
-    //         bind2dTextureIfRequired(null);
-    // });
+            bind2dTextureIfRequired(null);
+    });
 
     //DXT5
     makeTexture(testImageAddress, 
@@ -219,11 +230,11 @@ function initTextures(){
             var imgDataArr = setupCompressedTextureFromImage(image, numLevels); //TODO reuse DXT1 result? 
             var mipSize = TEX_SIZE;
             for (var mipLevel=0;mipLevel<imgDataArr.length;mipLevel++){
-                setupCompressedTextureDxt5FromImagedata(imgDataArr[mipLevel], compressedTex1, mipLevel, mipSize);
+                setupCompressedTextureDxt5FromImagedata(imgDataArr[mipLevel], compressedTexDxt5, mipLevel, mipSize);
                 mipSize/=2;
             }
             //finalise setup? (maybe this shoudl come at the end)
-            bind2dTextureIfRequired(compressedTex1);
+            bind2dTextureIfRequired(compressedTexDxt5);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
             gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
 
